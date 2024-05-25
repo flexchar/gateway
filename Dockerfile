@@ -1,5 +1,5 @@
 # Use an official Node.js runtime as a parent image
-FROM node:20-alpine
+FROM oven/bun:1
 
 # Set the working directory in the container
 WORKDIR /app
@@ -8,13 +8,7 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install app dependencies
-RUN npm install
-
-COPY ./ ./
-
-RUN npm run build \
-&& rm -rf node_modules \
-&& npm install --production
+RUN bun install
 
 # Bundle app source
 COPY . .
@@ -22,7 +16,5 @@ COPY . .
 # Expose the port your app runs on
 EXPOSE 8787
 
-ENTRYPOINT ["npm"]
-
 # Define the command to run your app
-CMD ["run", "start:node"]
+CMD ["bun run src/start-bun.ts"]
