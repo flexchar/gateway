@@ -1,5 +1,7 @@
 import { GOOGLE } from '../../globals';
 import { ContentType, Message, Params } from '../../types/requestBody';
+import { transformGenerationConfig } from '../google-vertex-ai/transformGenerationConfig';
+import { transformMessagePart } from '../google-vertex-ai/transformMessagePart';
 import {
   ChatCompletionResponse,
   ErrorResponse,
@@ -9,26 +11,6 @@ import {
   generateErrorResponse,
   generateInvalidProviderResponseError,
 } from '../utils';
-
-const transformGenerationConfig = (params: Params) => {
-  const generationConfig: Record<string, any> = {};
-  if (params['temperature']) {
-    generationConfig['temperature'] = params['temperature'];
-  }
-  if (params['top_p']) {
-    generationConfig['topP'] = params['top_p'];
-  }
-  if (params['top_k']) {
-    generationConfig['topK'] = params['top_k'];
-  }
-  if (params['max_tokens']) {
-    generationConfig['maxOutputTokens'] = params['max_tokens'];
-  }
-  if (params['stop']) {
-    generationConfig['stopSequences'] = params['stop'];
-  }
-  return generationConfig;
-};
 
 // models for which systemInstruction is not supported
 const SYSTEM_INSTRUCTION_DISABLED_MODELS = [
@@ -75,19 +57,8 @@ export const GoogleChatCompleteConfig: ProviderConfig = {
 
           if (message.content && typeof message.content === 'object') {
             message.content.forEach((c: ContentType) => {
-              if (c.type === 'text') {
-                parts.push({
-                  text: c.text,
-                });
-              }
-              if (c.type === 'image_url') {
-                parts.push({
-                  inlineData: {
-                    mimeType: 'image/jpeg',
-                    data: c.image_url?.url,
-                  },
-                });
-              }
+              const part = transformMessagePart(c);
+              parts.push(part);
             });
           }
 
@@ -173,6 +144,25 @@ export const GoogleChatCompleteConfig: ProviderConfig = {
   stop: {
     param: 'generationConfig',
     transform: (params: Params) => transformGenerationConfig(params),
+  },
+  response_format: {
+    param: 'generationConfig',
+    transform: (params: Params) => transformGenerationConfig(params),
+  },
+  // https://ai.google.dev/gemini-api/docs/safety-settings#request-example
+  // Example payload to be included in the request that sets the safety settings:
+  //   "safety_settings": [
+  //     {
+  //         "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+  //         "threshold": "BLOCK_NONE"
+  //     },
+  //     {
+  //         "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+  //         "threshold": "BLOCK_ONLY_HIGH"
+  //     }
+  // ]
+  safety_settings: {
+    param: 'safety_settings',
   },
   tools: {
     param: 'tools',
@@ -323,13 +313,23 @@ export const GoogleChatCompleteStreamChunkTransform: (
 
   const parsedChunk: GoogleGenerateContentResponse = JSON.parse(chunk);
 
+  // console.log('parsedChunk', JSON.stringify(parsedChunk, null, 2));
+
+  // https://ai.google.dev/api/rest/v1beta/Candidate#finishreason
+  if (
+    'candidates' in parsedChunk &&
+    parsedChunk.candidates[0].finishReason !== 'STOP'
+  ) {
+    return generateInvalidProviderResponseError(parsedChunk, GOOGLE);
+  }
+
   return (
     `data: ${JSON.stringify({
       id: fallbackId,
       object: 'chat.completion.chunk',
       created: Math.floor(Date.now() / 1000),
       model: '',
-      provider: 'google',
+      provider: GOOGLE,
       choices:
         parsedChunk.candidates?.map((generation, index) => {
           let message: Message = { role: 'assistant', content: '' };

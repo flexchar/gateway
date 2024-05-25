@@ -13,6 +13,7 @@ import {
   generateInvalidProviderResponseError,
 } from '../utils';
 import { transformGenerationConfig } from './transformGenerationConfig';
+import { transformMessagePart } from './transformMessagePart';
 import type {
   GoogleErrorResponse,
   GoogleGenerateContentResponse,
@@ -47,47 +48,8 @@ export const GoogleChatCompleteConfig: ProviderConfig = {
 
           if (message.content && typeof message.content === 'object') {
             message.content.forEach((c: ContentType) => {
-              if (c.type === 'text') {
-                parts.push({
-                  text: c.text,
-                });
-              }
-              if (c.type === 'image_url') {
-                const { url } = c.image_url || {};
-
-                if (!url) {
-                  // Shouldn't throw error?
-                  return;
-                }
-
-                // Example: data:image/png;base64,abcdefg...
-                if (url.startsWith('data:')) {
-                  const [mimeTypeWithPrefix, base64Image] =
-                    url.split(';base64,');
-                  const mimeType = mimeTypeWithPrefix.split(':')[1];
-
-                  parts.push({
-                    inlineData: {
-                      mimeType: mimeType,
-                      data: base64Image,
-                    },
-                  });
-
-                  return;
-                }
-
-                // This part is problematic because URLs are not supported in the current implementation.
-                // Two problems exist:
-                // 1. Only Google Cloud Storage URLs are supported.
-                // 2. MimeType is not supported in OpenAI API, but it is required in Google Vertex AI API.
-                // Google will return an error here if any other URL is provided.
-                parts.push({
-                  fileData: {
-                    mimeType: 'image/jpeg',
-                    fileUri: url,
-                  },
-                });
-              }
+              const part = transformMessagePart(c);
+              parts.push(part);
             });
           }
 
